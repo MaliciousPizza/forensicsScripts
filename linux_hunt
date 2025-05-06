@@ -1,0 +1,94 @@
+1. Prepare Your Threat Hunting Environment
+	•	Tools:
+	•	diff, rsync, AIDE, or Tripwire – for baseline comparison
+	•	auditd / ausearch / aureport – for system audit logs
+	•	journalctl, last, who, ps, netstat, ss, tcpdump
+	•	Python with tools like diffoscope for deeper binary diffing
+	•	ELK Stack or OpenSearch – if logs are being centralized
+	•	osquery or Lynis – for structured queries on system state
+	•	Baseline Prep:
+	•	Mount the baseline disk image (loop mount or via guestmount).
+	•	Prepare a known-good hash list of critical binaries, configs, and permissions.
+
+⸻
+
+2. Identify Key TTPs Using MITRE ATT&CK for ICS
+
+Use MITRE ATT&CK for ICS and build hypotheses around the following relevant TTP categories:
+	•	Initial Access: External Remote Services (T0886), Valid Accounts (T0881)
+	•	Execution: Command-Line Interface (T0807), Scripting (T0853)
+	•	Persistence: Modify System Image (T0851), Valid Accounts (T0881)
+	•	Privilege Escalation: Exploitation for Privilege Escalation (T0890)
+	•	Defense Evasion: File and Directory Permissions Modification (T0826)
+	•	Credential Access: Brute Force (T0812), Credential Dumping (T1003)
+	•	Discovery: Network Sniffing (T0842), System Information Discovery (T0887)
+	•	Lateral Movement: Remote File Copy (T0887), Remote Services (T0864)
+	•	Impact: Inhibit Response Function (T0815), Manipulation of View (T0832)
+
+⸻
+
+3. Compare the Baseline vs Current System
+
+Filesystem Comparison:
+	•	rsync -avn or diff -r between mounted baseline and current filesystem.
+	•	Look for changes in:
+	•	/etc – config files (e.g., cron, sudoers, passwd)
+	•	/usr/bin, /usr/sbin, /lib – binaries (look for timestamp mismatches or hash changes)
+	•	/var/log/ – deleted/rotated logs
+	•	New user scripts in /opt, /tmp, /home, /var/tmp
+
+Cron Jobs & Services:
+	•	Compare crontabs: crontab -l, /etc/cron*
+	•	systemctl list-units --type=service --all vs baseline
+	•	Check for newly enabled or suspicious services
+
+⸻
+
+4. Focus on the Anomaly Date
+
+Time-Scoped Root Cause Analysis
+	•	Logs:
+	•	journalctl --since "2025-04-28" --until "2025-04-30"
+	•	ausearch -ts 04/28/2025 (audit logs)
+	•	/var/log/secure, /var/log/messages, /var/log/audit/audit.log
+	•	Look for new user logins, sudo activity, service restarts, crash reports, and new processes
+	•	Processes:
+	•	Check for unknown or suspicious processes during that window
+	•	ps -eo pid,ppid,cmd,etime (use timestamps to isolate)
+	•	Networking:
+	•	ss -tunap for open ports
+	•	Compare with firewalld or iptables rules
+	•	Look at /var/log/secure or /var/log/audit/audit.log for SSH or remote access attempts
+
+⸻
+
+5. Threat Hunting Hypotheses
+
+Example hypotheses to investigate:
+	•	Unauthorized remote access occurred → Check SSH logs, new user accounts, lastlog, new ssh keys in ~/.ssh/
+	•	Malicious script or binary executed → Check /tmp, new scripts in unusual locations, bash history
+	•	System configuration was tampered → Compare /etc/hosts, /etc/resolv.conf, PAM config, sudoers
+	•	Scheduled task was abused → Check crons, systemd timers, unusual at or batch jobs
+
+⸻
+
+6. Threat Intelligence and IOC Scanning
+	•	Use YARA rules to scan for known malware signatures
+	•	Hash scanning: compare current binary hashes with known clean values or submit to VirusTotal
+	•	IP/Domain IOC check: parse logs for suspicious domains or IPs, correlate with threat feeds
+
+⸻
+
+7. Post-Hunt Actions
+	•	Document All Findings: Tools used, commands, hash differences, logs, indicators.
+	•	Map Confirmed TTPs to MITRE ATT&CK: Use a matrix to track where attacker behaviors fit.
+	•	Build Detection Rules:
+	•	Use auditd, osquery, or SIEM queries to monitor for future TTPs.
+	•	Recommend Hardening Measures: Disable unused services, remove rogue users, enforce logging.
+
+⸻
+
+8. Optional Enhancements
+	•	Run Lynis or OpenSCAP for configuration hardening assessment.
+	•	Capture memory dumps for malware analysis using avml or LiME if the system is live.
+	•	Build a timeline using tools like plaso or log2timeline for forensic reconstruction.
