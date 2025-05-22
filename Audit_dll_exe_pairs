@@ -1,0 +1,5 @@
+accesschk.exe -w -s -q "Users" C:\ > writable_dirs.txt
+Get-Content writable_dirs.txt | ForEach-Object {
+    Get-ChildItem -Path $_ -Filter *.exe -Recurse -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $_ -Filter *.dll -Recurse -ErrorAction SilentlyContinue
+}
