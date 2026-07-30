@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""
-verify_bigip_image.py
-
-Walks a mounted BIG-IP image (or any directory tree), computes the SHA-512
-hash of every file, and checks it against an F5 BIG-IP NDJSON checksum
-manifest (e.g. BIG-IP-15_x-ALL.ndjson).
-
-Efficiency approach:
-    - The manifest is loaded ONCE and converted into a dict keyed by
-      sha512 hash -> list of {file_name, file_path} entries. This gives
-      O(1) average-case lookups per hashed file instead of re-scanning
-      hundreds of thousands of manifest lines for every file on disk.
-    - Files are hashed in streaming (chunked) fashion so large files
-      don't need to be loaded fully into memory.
-
-For each file found on the image, this reports one of:
-    MATCH       - hash found in manifest AND file_name matches
-    HASH_ONLY   - hash found in manifest but under a different file_name
-    UNKNOWN     - hash not found in manifest at all
-
-Usage:
-    python3 verify_bigip_image.py --manifest BIG-IP-15_x-ALL.ndjson --image-root /mnt/image
-    python3 verify_bigip_image.py --manifest BIG-IP-15_x-ALL.ndjson --image-root /mnt/image --report results.csv
-"""
 
 import argparse
 import csv
