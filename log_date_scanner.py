@@ -45,12 +45,23 @@ from datetime import datetime, timezone
 # that matches a given line wins (we don't keep scanning a line once we
 # have a hit, for speed).
 
+# NOTE ON TIMEZONES: the epoch-based parsers (audit_epoch, bare_epoch) are
+# converted to UTC and then made timezone-naive with .replace(tzinfo=None).
+# All the text-based parsers (syslog, ISO, apache, palo alto) are naive by
+# construction -- they just parse whatever wall-clock time was printed in
+# the log, with no timezone info. Keeping everything naive (all UTC-based
+# where a timezone is known, all "as-logged" where it isn't) is required so
+# that datetimes from different patterns can be compared with < and > when
+# a single file's lines match more than one pattern; mixing naive and
+# aware datetimes raises TypeError in Python. If you need true tz-aware
+# analysis, treat epoch-derived timestamps in the output as UTC and
+# text-derived ones as local/unspecified.
 _MULTISPACE_RE = re.compile(r"\s+")
 
 
 def _parse_audit_epoch(match, file_year):
     try:
-        return datetime.fromtimestamp(float(match.group(1)), tz=timezone.utc)
+        return datetime.fromtimestamp(float(match.group(1)), tz=timezone.utc).replace(tzinfo=None)
     except (ValueError, OSError, OverflowError):
         return None
 
@@ -98,7 +109,7 @@ def _parse_bare_epoch(match, file_year):
         # Sanity window: 2001-09-09 .. 2038-01-19. Keeps us from treating
         # random large numbers (PIDs, sizes, ports) in log lines as dates.
         if 1_000_000_000 <= ts <= 2_147_483_647:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
     except (ValueError, OSError, OverflowError):
         return None
     return None
@@ -117,6 +128,13 @@ PATTERNS = [
 LOG_EMPTY = "LOG EMPTY"
 NO_DATE_FOUND = "NO DATE FOUND"
 READ_ERROR = "READ ERROR"
+
+# Single source of truth for how every datetime is displayed in the table.
+# All parsers above feed into fmt_dt() below, so every row -- regardless of
+# which pattern matched (syslog, ISO, epoch, etc.) -- renders in this exact
+# format. Override with --date-format on the command line if you want
+# something else (e.g. "%m/%d/%Y %H:%M:%S" or "%Y-%m-%dT%H:%M:%S").
+DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 # ---------------------------------------------------------------------------
@@ -198,11 +216,11 @@ def iter_files(root):
             yield os.path.join(dirpath, name)
 
 
-def fmt_dt(dt):
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+def fmt_dt(dt, date_format=DEFAULT_DATE_FORMAT):
+    return dt.strftime(date_format)
 
 
-def build_table(root, partition):
+def build_table(root, partition, date_format=DEFAULT_DATE_FORMAT):
     rows = []
     for path in sorted(iter_files(root)):
         rel = os.path.relpath(path, root)
@@ -210,7 +228,7 @@ def build_table(root, partition):
         if status is not None:
             rows.append((partition, rel, status, status))
         else:
-            rows.append((partition, rel, fmt_dt(first_dt), fmt_dt(last_dt)))
+            rows.append((partition, rel, fmt_dt(first_dt, date_format), fmt_dt(last_dt, date_format)))
     return rows
 
 
@@ -249,13 +267,20 @@ def main(argv=None):
         help="Optional path to write the Markdown table to. "
              "Prints to stdout if omitted.",
     )
+    parser.add_argument(
+        "--date-format",
+        default=DEFAULT_DATE_FORMAT,
+        help="strftime format applied uniformly to every First/Last Log Date "
+             f"cell in the table. Default: '{DEFAULT_DATE_FORMAT}' "
+             "(e.g. 2026-09-01 00:00:01).",
+    )
     args = parser.parse_args(argv)
 
     if not os.path.isdir(args.directory):
         print(f"Error: '{args.directory}' is not a directory.", file=sys.stderr)
         return 1
 
-    rows = build_table(args.directory, args.partition)
+    rows = build_table(args.directory, args.partition, args.date_format)
     table = render_markdown(rows)
 
     if args.output:
